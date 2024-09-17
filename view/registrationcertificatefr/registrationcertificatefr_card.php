@@ -44,7 +44,7 @@ require_once __DIR__ . '/../../lib/dolicar_registrationcertificatefr.lib.php';
 global $conf, $langs, $user, $db, $hookmanager;
 
 // Load translation files required by the page
-saturne_load_langs(['other']);
+saturne_load_langs(['other', 'propal', 'interventions']);
 
 // Get parameters
 $id                  = GETPOST('id', 'int');
@@ -133,15 +133,12 @@ if (empty($reshook)) {
 
 	if ($action == 'add') {
 		$registrationNumber = strtoupper(GETPOST('a_registration_number'));
-		if ((!preg_match('/^[A-Z]{2}[0-9]{3}[A-Z]{2}$/', $registrationNumber) && !preg_match('/^[A-Z]{2}-[0-9]{3}-[A-Z]{2}$/', $registrationNumber))) {
-			setEventMessage($langs->trans('BadLicencePlateFormat'), 'errors');
-			$action = 'create';
-		}
 	}
 
 	if ($action == 'getRegistrationCertificateData') {
 		require_once __DIR__ . '/../../core/tpl/dolicar_registrationcertificatefr_immatriculation_api_fetch_action.tpl.php';
 	}
+
 
 	$triggermodname = 'DOLICAR_REGISTRATIONCERTIFICATEFR_MODIFY'; // Name of trigger action code to execute when we modify record
 
@@ -181,14 +178,15 @@ if ($action == 'create') {
 
 	print '<hr>';
 	print '<form method="POST" action="'.$_SERVER["PHP_SELF"].'" id="getRegistrationCertificateData">';
-	print '<input type="hidden" name="action" value="getRegistrationCertificateData">';
+    print '<input type="hidden" name="action" value="getRegistrationCertificateData">';
+    print '<input type="hidden" name="token" value="'. newToken() .'">';
 	print '<table class="border centpercent tableforfieldcreate">';
 	print '<tr>';
 	print '<td class="titlefieldcreate">';
 	print $langs->trans('FindLicencePlateInRepertory');
 	print '</td>';
 	print '<td class="valuefieldcreate">';
-	print '<input class="flat minwidth400 --success" id="registrationNumber" name="registrationNumber">';
+	print '<input class="flat minwidth400 --success" id="registrationNumber" name="registrationNumber" value="'. GETPOST('a_registration_number') .'">';
 	print '</td>';
 	print '</tr>';
 	print '<tr>';
@@ -243,10 +241,17 @@ if ($action == 'create') {
 	print '</td><td class="lot-container">';
 	print '<span class="lot-content">';
 
-	dol_strlen(GETPOST('fk_product')) > 0 ? $product->fetch(GETPOST('fk_product')) : 0;
+    $productLots = saturne_fetch_all_object_type('ProductLot', '', '', 0, 0, $productPost > 0 ? ['customsql' => ' fk_product = ' . $productPost] : []);
+    $productLotsData  = [];
+    if (is_array($productLots) && !empty($productLots)) {
+        foreach ($productLots as $productLotSingle) {
+            $productLotsData[$productLotSingle->id] = $productLotSingle->batch;
+        }
+    }
 
-	print dolicar_select_product_lots($productPost, $productLotPost, 'fk_lot', 1, '', '', 0, 'maxwidth500 widthcentpercentminusxx', false, 0, array(), false, '', 'fk_lot');
-	print '<a class="butActionNew" href="' . DOL_URL_ROOT . '/product/stock/productlot_card.php?action=create' . ((GETPOST('fk_product') > 0) ? '&fk_product=' . GETPOST('fk_product') : '') . '&backtopage=' . urlencode($_SERVER['PHP_SELF'] . '?action=create') . '" target="_blank"><span class="fa fa-plus-circle valignmiddle paddingleft" title="' . $langs->trans('AddProductLot') . '"></span></a>';
+    print $form::selectarray('fk_lot', $productLotsData, $productLotPost, $langs->transnoentities('SelectProductLots'), '', '', '', '', '', '','', 'maxwidth500 widthcentpercentminusx');
+
+    print '<a class="butActionNew" href="' . DOL_URL_ROOT . '/product/stock/productlot_card.php?action=create' . ((GETPOST('fk_product') > 0) ? '&fk_product=' . GETPOST('fk_product') : '') . '&backtopage=' . urlencode($_SERVER['PHP_SELF'] . '?action=create') . '" target="_blank"><span class="fa fa-plus-circle valignmiddle paddingleft" title="' . $langs->trans('AddProductLot') . '"></span></a>';
 	print '</span>';
 	print '</td></tr>';
 
@@ -335,9 +340,15 @@ if (($id || $ref) && $action == 'edit') {
 	print '</td><td class="lot-container">';
 	print '<span class="lot-content">';
 
-	dol_strlen(GETPOST('fk_product')) > 0 ? $product->fetch(GETPOST('fk_product')) : 0;
+    $productLots = saturne_fetch_all_object_type('ProductLot', '', '', 0, 0, $productPost > 0 ? ['customsql' => ' fk_product = ' . $productPost] : []);
+    $productLotsData  = [];
+    if (is_array($productLots) && !empty($productLots)) {
+        foreach ($productLots as $productLotSingle) {
+            $productLotsData[$productLotSingle->id] = $productLotSingle->batch;
+        }
+    }
 
-	print dolicar_select_product_lots($productPost, $productLotPost, 'fk_lot', 1, '', '', 0, 'maxwidth500 widthcentpercentminusxx', false, 0, array(), false, '', 'fk_lot');
+    print $form::selectarray('fk_lot', $productLotsData, $productLotPost, $langs->transnoentities('SelectProductLots'), '', '', '', '', '', '','', 'maxwidth500 widthcentpercentminusx');
 	print '<a class="butActionNew" href="' . DOL_URL_ROOT . '/product/stock/productlot_card.php?action=create' . ((GETPOST('fk_product') > 0) ? '&fk_product=' . GETPOST('fk_product') : '') . '&backtopage=' . urlencode($_SERVER['PHP_SELF'] . '?action=create') . '" target="_blank"><span class="fa fa-plus-circle valignmiddle paddingleft" title="' . $langs->trans('AddProductLot') . '"></span></a>';
 	print '</span>';
 	print '</td></tr>';
@@ -439,7 +450,17 @@ if ($object->id > 0 && (empty($action) || ($action != 'edit' && $action != 'crea
 		}
 
 		if (empty($reshook)) {
-			print dolGetButtonAction($langs->trans('Modify'), '', 'default', $_SERVER["PHP_SELF"].'?id='.$object->id.'&action=edit&token='.newToken(), '', $permissiontoadd);
+            $displayButton = $onPhone ? '<i class="fas fa-edit fa-2x"></i>' : '<i class="fas fa-edit"></i>' . ' ' . $langs->trans('Modify');
+            print dolGetButtonAction($displayButton, '', 'default', $_SERVER["PHP_SELF"].'?id='.$object->id.'&action=edit&token='.newToken(), '', $permissiontoadd);
+
+            $displayButton = $onPhone ? '<i class="fas fa-file-signature fa-2x"></i>' : '<i class="fas fa-file-signature"></i>' . ' ' . $langs->trans('NewPropal');
+            print dolGetButtonAction($displayButton, '', 'default', dol_buildpath('/comm/propal/card.php?action=create&socid=' . $object->fk_soc . '&options_registrationcertificatefr=' . $object->id, 3), '', $permissiontoadd);
+
+            $displayButton = $onPhone ? '<i class="fas fa-file-invoice-dollar fa-2x"></i>' : '<i class="fas fa-file-invoice-dollar"></i>' . ' ' . $langs->trans('NewInvoice');
+            print dolGetButtonAction($displayButton, '', 'default', dol_buildpath('/compta/facture/card.php?action=create&socid=' . $object->fk_soc . '&options_registrationcertificatefr=' . $object->id, 3), '', $permissiontoadd);
+
+            $displayButton = $onPhone ? '<i class="fas fa-ambulance fa-2x"></i>' : '<i class="fas fa-ambulance"></i>' . ' ' . $langs->trans('NewIntervention');
+            print dolGetButtonAction($displayButton, '', 'default', dol_buildpath('/fichinter/card.php?action=create&socid=' . $object->fk_soc, 3), '', $permissiontoadd);
 		}
 		print '</div>'."\n";
 	}

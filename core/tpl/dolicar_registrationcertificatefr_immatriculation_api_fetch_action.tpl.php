@@ -1,4 +1,15 @@
 <?php
+require_once __DIR__ . '/../../../../core/lib/admin.lib.php';
+// In order to avoid product creation error
+$conf->global->BARCODE_PRODUCT_ADDON_NUM = 0;
+
+if ($conf->global->DOLICAR_API_REMAINING_REQUESTS_COUNTER <= 0) {
+    setEventMessage($langs->trans('ZeroApiRequestsRemaining'), 'errors');
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?action=create&a_registration_number=' . GETPOST('registrationNumber'));
+    exit;
+} else if ($conf->global->DOLICAR_API_REMAINING_REQUESTS_COUNTER <= 100) {
+    setEventMessage($langs->trans('LessThanHundredApiRequestsRemaining'), 'warning');
+}
 
 $apiUrl = 'http://www.immatriculationapi.com/api/reg.asmx/CheckFrance';
 
@@ -21,27 +32,24 @@ if (dol_strlen($registrationNumber) > 0) {
 }
 
 if (dol_strlen($username) > 0) {
-	if ((preg_match('/^[A-Z]{2}[0-9]{3}[A-Z]{2}$/', $registrationNumber) || preg_match('/^[A-Z]{2}-[0-9]{3}-[A-Z]{2}$/', $registrationNumber))) {
-		// Setup request to send json via POST
+	// Setup request to send json via POST
 
-		$xmlData = @file_get_contents( $apiUrl . '?RegistrationNumber=' . $registrationNumber ."&username=" . $username);
+	$xmlData = @file_get_contents( $apiUrl . '?RegistrationNumber=' . $registrationNumber ."&username=" . $username);
 
-		if (empty($xmlData)) {
-			$usernameConfigUrl = DOL_URL_ROOT . '/custom/dolicar/admin/registrationcertificate.php';
+	if (empty($xmlData)) {
+		$usernameConfigUrl = DOL_URL_ROOT . '/custom/dolicar/admin/registrationcertificate.php';
 
-			setEventMessage($langs->trans('BadAPIUsernameOrBadLicencePlateFormat', $usernameConfigUrl), 'errors');
-			$error++;
-			$action = $createRegistrationCertificate ? '' : 'create';
-		} else {
-			$xml = simplexml_load_string($xmlData);
-			$strJson = $xml->vehicleJson;
-			$registrationCertificateObject = json_decode($strJson);
-			setEventMessages($langs->trans("LicencePlateInformationsCharged"), null, 'mesgs');
-		}
-	} else {
-		setEventMessage($langs->trans('BadLicencePlateFormat'), 'errors');
+		setEventMessage($langs->trans('BadAPIUsernameOrBadLicencePlateFormat', $usernameConfigUrl), 'errors');
 		$error++;
 		$action = $createRegistrationCertificate ? '' : 'create';
+	} else {
+		$xml = simplexml_load_string($xmlData);
+		$strJson = $xml->vehicleJson;
+		$registrationCertificateObject = json_decode($strJson);
+        dolibarr_set_const($db, 'DOLICAR_API_REMAINING_REQUESTS_COUNTER', $conf->global->DOLICAR_API_REMAINING_REQUESTS_COUNTER - 1, 'integer', 0, '', $conf->entity);
+        dolibarr_set_const($db, 'DOLICAR_API_REQUESTS_COUNTER', $conf->global->DOLICAR_API_REQUESTS_COUNTER + 1, 'integer', 0, '', $conf->entity);
+        setEventMessages($langs->trans("LicencePlateInformationsCharged"), null, 'mesgs');
+        setEventMessages($langs->trans("RemainingRequests", $conf->global->DOLICAR_API_REMAINING_REQUESTS_COUNTER), null, 'mesgs');
 	}
 } else {
 	$usernameConfigUrl = DOL_URL_ROOT . '/custom/dolicar/admin/registrationcertificate.php';
@@ -60,6 +68,7 @@ if (is_object($registrationCertificateObject)) {
 	if ($result <= 0) {
 		$product->ref = $productRef;
 		$product->label = $productRef;
+        $product->status_batch = 1;
 		$productId = $product->create($user);
 
 		if ($productId > 0) {

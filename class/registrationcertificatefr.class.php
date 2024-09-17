@@ -66,7 +66,8 @@ class RegistrationCertificateFr extends CommonObject
 	public $picto = 'fontawesome_fa-car_fas_#d35968';
 
 	const STATUS_VALIDATED = 1;
-	const STATUS_CANCELED = 9;
+	const STATUS_LOCKED    = 2;
+	const STATUS_ARCHIVED  = 3;
 
 	/**
 	 *  'type' field format ('integer', 'integer:ObjectClass:PathToClass[:AddCreateButtonOrNot[:Filter[:Sortfield]]]', 'sellist:TableName:LabelFieldName[:KeyFieldName[:KeyFieldParent[:Filter[:Sortfield]]]]', 'varchar(x)', 'double(24,8)', 'real', 'price', 'text', 'text:none', 'html', 'date', 'datetime', 'timestamp', 'duration', 'mail', 'phone', 'url', 'password')
@@ -102,7 +103,7 @@ class RegistrationCertificateFr extends CommonObject
 	public $fields=array(
 		'rowid' => array('type'=>'integer', 'label'=>'TechnicalID', 'enabled'=>'1', 'position'=>1, 'notnull'=>1, 'visible'=>0, 'noteditable'=>'1', 'index'=>1, 'css'=>'left', 'comment'=>"Id"),
 		'ref' => array('type'=>'varchar(128)', 'label'=>'Ref', 'enabled'=>'1', 'position'=>10, 'notnull'=>1, 'visible'=>4, 'noteditable'=>'1', 'index'=>1, 'searchall'=>1, 'validate'=>'1', 'comment'=>"Reference of object"),
-		'fk_soc' => array('type'=>'integer:Societe:societe/class/societe.class.php:1:status=1 AND entity IN (__SHARED_ENTITIES__)', 'label'=>'ThirdParty', 'enabled'=>'1', 'position'=>14, 'notnull'=>-1, 'visible'=>1, 'index'=>1, 'css'=>'maxwidth500 widthcentpercentminusxx', 'help'=>"LinkToThirparty", 'validate'=>'1',),
+		'fk_soc' => array('type'=>'integer:Societe:societe/class/societe.class.php:1:(status:=:1)', 'label'=>'ThirdParty', 'enabled'=>'1', 'position'=>14, 'notnull'=>-1, 'visible'=>1, 'index'=>1, 'css'=>'maxwidth500 widthcentpercentminusxx', 'help'=>"LinkToThirparty", 'validate'=>'1',),
 		'date_creation' => array('type'=>'datetime', 'label'=>'DateCreation', 'enabled'=>'1', 'position'=>40, 'notnull'=>1, 'visible'=>-2,),
 		'tms' => array('type'=>'timestamp', 'label'=>'DateModification', 'enabled'=>'1', 'position'=>50, 'notnull'=>0, 'visible'=>-2,),
 		'fk_user_creat' => array('type'=>'integer:User:user/class/user.class.php', 'label'=>'UserAuthor', 'enabled'=>'1', 'position'=>540, 'notnull'=>1, 'visible'=>-2,),
@@ -923,16 +924,10 @@ class RegistrationCertificateFr extends CommonObject
 			global $langs;
 			//$langs->load("dolicar@dolicar");
 			$this->labelStatus[self::STATUS_VALIDATED] = $langs->transnoentitiesnoconv('Enabled');
-			$this->labelStatus[self::STATUS_CANCELED] = $langs->transnoentitiesnoconv('Disabled');
 			$this->labelStatusShort[self::STATUS_VALIDATED] = $langs->transnoentitiesnoconv('Enabled');
-			$this->labelStatusShort[self::STATUS_CANCELED] = $langs->transnoentitiesnoconv('Disabled');
 		}
 
 		$statusType = 'status'.$status;
-		//if ($status == self::STATUS_VALIDATED) $statusType = 'status1';
-		if ($status == self::STATUS_CANCELED) {
-			$statusType = 'status6';
-		}
 
 		return dolGetStatus($this->labelStatus[$status], $this->labelStatusShort[$status], '', $statusType, $mode);
 	}
@@ -1095,84 +1090,22 @@ class RegistrationCertificateFr extends CommonObject
 	 * @return string HTML string with
 	 * @throws Exception
 	 */
-	public function select_registrationcertificate_list($selected = '', $htmlname = 'options_registrationcertificatefr', $filter = '', $showempty = '1', $forcecombo = 0, $events = array(), $outputmode = 0, $limit = 0, $morecss = 'minwidth100', $moreparam = 0, $multiple = false, $noroot = 0, $contextpage = '', $multientitymanagedoff = true)
+	public function selectRegistrationCertificateList($selected = '', $htmlname = 'options_registrationcertificatefr', $filter = [], $showempty = '1', $forcecombo = 0, $events = array(), $outputmode = 0, $limit = 0, $morecss = 'minwidth100 maxwidth300', $moreparam = 0, $multiple = false, $noroot = 0, $contextpage = '', $multientitymanagedoff = true)
 	{
-		global $conf, $langs;
+        global $form;
 
-		require_once DOL_DOCUMENT_ROOT . '/product/stock/class/productlot.class.php';
+        $product = new Product($this->db);
 
-		$productlot = new Productlot($this->db);
+        $objectList = saturne_fetch_all_object_type('registrationcertificatefr', '', '', $limit, 0, $filter);
+        $registrationCertificatesData  = [];
+        if (is_array($objectList) && !empty($objectList)) {
+            foreach ($objectList as $registrationCertificate) {
+                $product->fetch($registrationCertificate->fk_product);
+                $registrationCertificatesData[$registrationCertificate->id] = $registrationCertificate->ref . ' - ' . $product->label;
+            }
+        }
 
-		$out      = '';
-		$outarray = array();
-
-		$selected = array($selected);
-
-		// Clean $filter that may contains sql conditions so sql code
-		if (function_exists('testSqlAndScriptInject')) {
-			if (testSqlAndScriptInject($filter, 3) > 0) {
-				$filter = '';
-			}
-		}
-		// On recherche les societies
-		$sql  = "SELECT *";
-		$sql .= " FROM " . MAIN_DB_PREFIX . "dolicar_registrationcertificatefr as s";
-
-		if (isset($this->ismultientitymanaged) && $this->ismultientitymanaged == 1 && $multientitymanagedoff == false) $sql .= ' WHERE s.entity IN (' . getEntity($this->element) . ')';
-		else $sql                                                                        .= ' WHERE s.entity = ' . $conf->entity;
-
-		if ($filter) $sql .= " AND (" . $filter . ")";
-
-		$sql .= $this->db->order("rowid", "ASC");
-		$sql .= $this->db->plimit($limit, 0);
-
-		// Build output string
-		dol_syslog(get_class($this) . "::select_registrationcertificate_list", LOG_DEBUG);
-		$resql = $this->db->query($sql);
-		$num = '';
-		if ($resql) {
-			if ( ! $forcecombo) {
-				include_once DOL_DOCUMENT_ROOT . '/core/lib/ajax.lib.php';
-				$out .= ajax_combobox($htmlname, $events, 0);
-			}
-
-			// Construct $out and $outarray
-			$out .= '<select id="' . $htmlname . '" class="flat' . ($morecss ? ' ' . $morecss : '') . '"' . ($moreparam ? ' ' . $moreparam : '') . ' name="' . $htmlname . ($multiple ? '[]' : '') . '" ' . ($multiple ? 'multiple' : '') . '>' . "\n";
-			$num                  = $this->db->num_rows($resql);
-			$i                    = 0;
-
-			$textifempty          = (($showempty && ! is_numeric($showempty)) ? $langs->trans($showempty) : '');
-			if ($showempty) $out .= '<option value="-1">' . $textifempty . '</option>' . "\n";
-
-			if ($num) {
-				while ($i < $num) {
-					$obj   = $this->db->fetch_object($resql);
-					$productlot->fetch($obj->fk_lot);
-
-					$label =  $obj->ref . ' - ' . $productlot->batch;
-
-					if (empty($outputmode)) {
-						if (in_array($obj->rowid, $selected)) {
-							$out .= '<option value="' . $obj->rowid . '" selected>' . $label . '</option>';
-						} else {
-							$out .= '<option value="' . $obj->rowid . '">' . $label . '</option>';
-						}
-					} else {
-						array_push($outarray, array('key' => $obj->rowid, 'value' => $label, 'label' => $label));
-					}
-
-					$i++;
-					if (($i % 10) == 0) $out .= "\n";
-				}
-			}
-			$out .= '</select>' . "\n";
-		} else {
-			dol_print_error($this->db);
-		}
-
-		$this->result = array('nbofregistrationcertificate' => $num);
-
-		return $out;
+        return $form::selectarray($htmlname, $registrationCertificatesData, $selected, $showempty, 0, 0, '', 0, 0, 0, '', $morecss);
 	}
 
 	/**
